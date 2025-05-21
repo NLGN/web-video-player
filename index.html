@@ -1,0 +1,181 @@
+<script type="text/javascript">
+        var gk_isXlsx = false;
+        var gk_xlsxFileLookup = {};
+        var gk_fileData = {};
+        function filledCell(cell) {
+          return cell !== '' && cell != null;
+        }
+        function loadFileData(filename) {
+        if (gk_isXlsx && gk_xlsxFileLookup[filename]) {
+            try {
+                var workbook = XLSX.read(gk_fileData[filename], { type: 'base64' });
+                var firstSheetName = workbook.SheetNames[0];
+                var worksheet = workbook.Sheets[firstSheetName];
+
+                // Convert sheet to JSON to filter blank rows
+                var jsonData = XLSX.utils.sheet_to_json(worksheet, { header: 1, blankrows: false, defval: '' });
+                // Filter out blank rows (rows where all cells are empty, null, or undefined)
+                var filteredData = jsonData.filter(row => row.some(filledCell));
+
+                // Heuristic to find the header row by ignoring rows with fewer filled cells than the next row
+                var headerRowIndex = filteredData.findIndex((row, index) =>
+                  row.filter(filledCell).length >= filteredData[index + 1]?.filter(filledCell).length
+                );
+                // Fallback
+                if (headerRowIndex === -1 || headerRowIndex > 25) {
+                  headerRowIndex = 0;
+                }
+
+                // Convert filtered JSON back to CSV
+                var csv = XLSX.utils.aoa_to_sheet(filteredData.slice(headerRowIndex)); // Create a new sheet from filtered array of arrays
+                csv = XLSX.utils.sheet_to_csv(csv, { header: 1 });
+                return csv;
+            } catch (e) {
+                console.error(e);
+                return "";
+            }
+        }
+        return gk_fileData[filename] || "";
+        }
+        </script>
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>本地视频播放器</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 0;
+            padding: 20px;
+            background-color: #f0f2f5;
+            display: flex;
+            justify-content: center;
+        }
+        .container {
+            display: flex;
+            max-width: 1200px;
+            width: 100%;
+            gap: 20px;
+        }
+        .video-player {
+            flex: 3;
+            background-color: #fff;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+            padding: 20px;
+        }
+        .playlist {
+            flex: 1;
+            background-color: #fff;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+            padding: 20px;
+            max-height: 500px;
+            overflow-y: auto;
+        }
+        video {
+            width: 100%;
+            border-radius: 8px;
+        }
+        .playlist h2 {
+            margin-top: 0;
+            font-size: 1.2em;
+            color: #333;
+        }
+        .playlist ul {
+            list-style: none;
+            padding: 0;
+            margin: 0;
+        }
+        .playlist li {
+            padding: 10px;
+            cursor: pointer;
+            border-bottom: 1px solid #eee;
+            transition: background-color 0.2s;
+        }
+        .playlist li:hover {
+            background-color: #f0f2f5;
+        }
+        .playlist li.active {
+            background-color: #e0e7ff;
+            color: #1d4ed8;
+        }
+        @media (max-width: 768px) {
+            .container {
+                flex-direction: column;
+            }
+            .playlist {
+                max-height: 300px;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="video-player">
+            <video id="videoPlayer" controls>
+                <source id="videoSource" src="" type="video/mp4">
+                您的浏览器不支持视频播放。
+            </video>
+        </div>
+        <div class="playlist">
+            <h2>播放列表</h2>
+            <ul id="playlist"></ul>
+        </div>
+    </div>
+
+    <script>
+        const videoPlayer = document.getElementById('videoPlayer');
+        const videoSource = document.getElementById('videoSource');
+        const playlist = document.getElementById('playlist');
+        const videoFolder = 'video/';
+
+        async function loadPlaylist() {
+            try {
+                // 从后端 API 获取视频文件列表
+                const response = await fetch('/api/videos');
+                const videoFiles = await response.json();
+
+                if (!Array.isArray(videoFiles)) {
+                    throw new Error('无法获取视频列表');
+                }
+
+                playlist.innerHTML = '';
+                videoFiles.forEach((file, index) => {
+                    const li = document.createElement('li');
+                    li.textContent = file;
+                    li.dataset.src = videoFolder + file;
+                    li.addEventListener('click', () => {
+                        // 移除所有 active 类
+                        document.querySelectorAll('.playlist li').forEach(item => {
+                            item.classList.remove('active');
+                        });
+                        // 添加 active 类到当前项
+                        li.classList.add('active');
+                        // 更新视频源并播放
+                        videoSource.src = li.dataset.src;
+                        videoPlayer.load();
+                        videoPlayer.play();
+                    });
+                    playlist.appendChild(li);
+                });
+
+                // 默认选中第一个视频
+                if (videoFiles.length > 0) {
+                    playlist.firstChild.classList.add('active');
+                    videoSource.src = videoFolder + videoFiles[0];
+                    videoPlayer.load();
+                }
+            } catch (error) {
+                console.error('加载播放列表失败:', error);
+                playlist.innerHTML = '<li>无法加载视频列表</li>';
+            }
+        }
+
+        // 初始化播放列表
+        loadPlaylist();
+    </script>
+</body>
+</html>
